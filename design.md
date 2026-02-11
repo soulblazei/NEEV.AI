@@ -28,7 +28,7 @@ The Anganwadi AI Nutrition and Management System is an offline-first mobile appl
 │  ┌──────┴──────────────────┴──────────────────┴───────┐    │
 │  │           Business Logic Layer                      │    │
 │  │  ┌─────────┐ ┌──────────┐ ┌────────────┐          │    │
-│  │  │ Student │ │ Inventory│ │ Prediction │          │    │
+│  │  │ child   │ │ Inventory│ │ Prediction │          │    │
 │  │  │ Manager │ │ Manager  │ │  Engine    │          │    │
 │  │  └─────────┘ └──────────┘ └────────────┘          │    │
 │  └──────────────────────┬──────────────────────────────┘    │
@@ -252,6 +252,10 @@ interface CVModule {
   estimateDepth(imageData: Blob): Promise<DepthMap>
   calculateBodyVolume(frontImage: Blob, sideImage: Blob): Promise<VolumeEstimation>
   
+  // Real-time guidance during photo capture
+  provideRealTimeGuidance(liveImageData: Blob): Promise<CaptureGuidance>
+  validateCaptureReadiness(liveImageData: Blob): Promise<CaptureReadinessResult>
+  
   // Model management
   loadCVModel(modelPath: string): Promise<void>
   loadPoseModel(modelPath: string): Promise<void>
@@ -262,6 +266,25 @@ interface CVModule {
   preprocessImage(imageData: Blob): Promise<Blob>
   validateImageQuality(imageData: Blob): ImageQualityReport
   validatePoseForMeasurement(imageData: Blob): PoseValidationResult
+}
+
+interface CaptureGuidance {
+  isReady: boolean
+  distanceStatus: 'too_close' | 'too_far' | 'optimal'
+  poseStatus: 'not_detected' | 'partial' | 'complete'
+  lightingStatus: 'too_dark' | 'too_bright' | 'optimal'
+  framingStatus: 'body_cut_off' | 'too_much_space' | 'optimal'
+  instructions: string[]                // e.g., ["Move 1 step back", "Stand straight"]
+  visualOverlay?: {
+    bodyOutline: Point[]                // Points to draw body outline guide
+    targetZone: Rectangle               // Optimal framing zone
+  }
+}
+
+interface CaptureReadinessResult {
+  canCapture: boolean
+  qualityScore: number                  // 0-1
+  issues: string[]
 }
 
 interface MeasurementResult {
@@ -519,14 +542,23 @@ GET    /api/v1/recipes/{id}                # Get recipe by ID
 POST   /api/v1/recipes/suggest             # Get personalized suggestions
 GET    /api/v1/recipes/deficiency/{type}   # Get recipes for deficiency
 POST   /api/v1/recipes/{id}/prepared       # Record meal prepared
+GET    /api/v1/recipes/stats               # Get recipe database statistics
 ```
 
+**Recipe Database:**
+- Minimum 200 recipes covering diverse nutritional needs
+- Regional variations for major Indian states
+- Age-appropriate recipes (6 months to 6 years)
+- Recipes categorized by: meal type, deficiency addressed, preparation complexity
+- Regular updates with seasonal recipes and user feedback
+
 **Recipe Recommendation Algorithm:**
-1. Identify nutritional deficiencies from student health data
+1. Identify nutritional deficiencies from child health data
 2. Query recipes that address those deficiencies
-3. Filter by available inventory items
-4. Rank by: deficiency coverage (40%), ingredient availability (30%), cultural preference (20%), preparation complexity (10%)
-5. Return top N recipes with explanations
+3. Filter by available inventory items (only required ingredients must be available)
+4. Filter by child's age group and allergy constraints
+5. Rank by: deficiency coverage (40%), ingredient availability (30%), cultural preference (20%), preparation complexity (10%)
+6. Return top N recipes with explanations
 
 #### 5. Messaging Service
 **Responsibility:** Handle inter-worker communication and referrals
@@ -1114,129 +1146,187 @@ interface Permission {
 *For any* measurement extraction failure, the error response should include at least one specific, actionable feedback message (e.g., "Move further back", "Ensure full body is visible", "Capture side profile for weight estimation") rather than a generic error message.
 **Validates: Requirements 7.12**
 
+**Property 41: Visual guidance provided during capture**
+*For any* photo capture session for anthropometric measurements, the mobile app should display real-time visual guidance including distance status, pose status, lighting status, and framing status with specific instructions to help the healthcare worker achieve optimal capture conditions.
+**Validates: Requirements 7.11**
+
 ### Recipe Suggestion Properties
 
-**Property 39: Recipe suggestions address deficiencies**
+**Property 42: Recipe suggestions address deficiencies**
 *For any* child with one or more identified nutritional deficiencies, every recipe in the suggested recipes list should address at least one of those specific deficiencies (i.e., the recipe's addresses.deficiencies array should contain at least one deficiency type that matches the child's deficiencies).
 **Validates: Requirements 8.1**
 
-**Property 40: Recipe suggestions respect allergy constraints**
+**Property 43: Recipe suggestions respect allergy constraints**
 *For any* child with documented allergies, all suggested recipes should not contain any ingredients that match those allergens (i.e., no recipe ingredient should appear in the child's allergy list).
 **Validates: Requirements 8.2**
 
-**Property 41: Recipe suggestions use available ingredients**
+**Property 44: Recipe suggestions use available ingredients**
 *For any* suggested recipe, all required (non-optional) ingredients should be present in the current local inventory with quantity greater than or equal to the recipe's required quantity.
 **Validates: Requirements 8.3**
 
-**Property 42: Recipe display is complete**
+**Property 45: Recipe display is complete**
 *For any* recipe displayed in the mobile app UI, the rendered output should include all of the following fields: ingredients list, preparation steps, portion sizes, and nutritional benefits.
 **Validates: Requirements 8.5**
 
-**Property 43: Meal preparation is logged**
+**Property 46: Meal preparation is logged**
 *For any* meal preparation action (marking a recipe as prepared for a child), the system should create a new meal record entry in the database and update the child's nutrition tracking data with the meal information.
 **Validates: Requirements 8.6**
 
-**Property 44: Multi-deficiency recipes rank higher**
+**Property 47: Multi-deficiency recipes rank higher**
 *For any* two recipes in a suggestion list where one recipe addresses N deficiencies and another addresses M deficiencies (where N > M), the recipe addressing more deficiencies should have a higher ranking score and appear earlier in the sorted suggestion list.
 **Validates: Requirements 8.7**
 
+**Property 48: Recipe database meets minimum size**
+*For any* deployment of the system, the recipe database should contain at least 200 recipes with complete nutritional information and regional variations.
+**Validates: Requirements 8.4**
+
 ### Interconnection System Properties
 
-**Property 45: Referrals include health summary**
+**Property 49: Referrals include health summary**
 *For any* referral created by the system, the referral object should include a health summary containing the child's current weight, current height, recent measurements (last 3-5 measurements), and all active nutritional deficiencies.
 **Validates: Requirements 9.1**
 
-**Property 46: Referrals trigger notifications**
+**Property 50: Referrals trigger notifications**
 *For any* referral created in the system, a notification should be generated and queued for delivery to the recipient healthcare worker specified in the referral.
 **Validates: Requirements 9.2**
 
-**Property 47: Offline messages are queued**
+**Property 51: Offline messages are queued**
 *For any* message sent when the mobile app is in offline mode, the message should be stored locally with syncStatus 'pending' and transmitted to the server when connectivity is restored.
 **Validates: Requirements 9.3**
 
-**Property 48: Messaging supports all content types**
+**Property 52: Messaging supports all content types**
 *For any* message created in the system, the message content type should be one of the supported types: 'text', 'voice', 'image', or 'referral'.
 **Validates: Requirements 9.4**
 
-**Property 49: Messages are encrypted**
+**Property 53: Messages are encrypted**
 *For any* message stored in the database or transmitted over the network, the message content should be encrypted using the system's encryption algorithm (AES-256).
 **Validates: Requirements 9.5**
 
-**Property 50: Message history respects authorization**
+**Property 54: Message history respects authorization**
 *For any* request to access a child's message history, the system should verify that the requesting healthcare worker has authorization for that child before returning the messages.
 **Validates: Requirements 9.6**
 
-**Property 51: Critical alerts notify care network**
+**Property 55: Critical alerts notify care network**
 *For any* critical health alert detected for a child, notifications should be generated and sent to all healthcare workers who are members of that child's care network.
 **Validates: Requirements 9.7**
 
-**Property 52: Inbox organizes by child**
+**Property 56: Inbox organizes by child**
 *For any* inbox view rendered in the mobile app, all messages, referrals, and alerts should be grouped by their associated child ID, with each group clearly separated.
 **Validates: Requirements 9.8**
 
 ### Security and Privacy Properties
 
-**Property 53: Child records are encrypted**
+**Property 57: Child records are encrypted**
 *For any* child record stored in the local database or transmitted over the network, the sensitive data fields should be encrypted using AES-256 encryption before storage or transmission.
 **Validates: Requirements 10.1**
 
-**Property 54: MFA is required for login**
+**Property 58: MFA is required for login**
 *For any* login attempt to the mobile app, the authentication flow should require both password verification and OTP verification before granting access.
 **Validates: Requirements 10.2**
 
-**Property 55: Role-based permissions are enforced**
+**Property 59: Role-based permissions are enforced**
 *For any* user action attempting to access or modify a resource, the system should verify that the user's role includes the required permission for that action and resource before allowing the operation to proceed.
 **Validates: Requirements 10.3**
 
-**Property 56: Record access is audited**
+**Property 60: Record access is audited**
 *For any* child record access operation (read, update, delete), an audit log entry should be created and persisted containing the timestamp, user ID, action type, and record ID.
 **Validates: Requirements 10.4**
 
-**Property 57: Local data is encrypted**
+**Property 61: Automatic logout after inactivity**
+*For any* user session where no user interaction occurs for 15 consecutive minutes, the system should automatically log out the user and clear the session.
+**Validates: Requirements 10.5**
+
+**Property 62: Local data is encrypted**
 *For any* data stored in the mobile app's local SQLite database, the data should be encrypted using device-level encryption (SQLCipher) with a secure encryption key.
 **Validates: Requirements 10.6**
 
 ### Reporting and Analytics Properties
 
-**Property 58: Monthly reports contain required metrics**
+**Property 63: Monthly reports contain required metrics**
 *For any* monthly report generated by the system, the report should include sections showing malnutrition rates, recovery rates, and trends, all grouped by Anganwadi center.
 **Validates: Requirements 11.1**
 
-**Property 59: Reports include data quality metrics**
+**Property 64: Reports include data quality metrics**
 *For any* report generated by the system, the report output should include data quality metrics sections showing: number of ghost entries detected, count of missing values by field, and data completeness percentages by center.
 **Validates: Requirements 11.2**
 
-**Property 60: Report export supports required formats**
+**Property 65: Dashboards visualize trends**
+*For any* analytics dashboard in the system, the dashboard should include visualizations showing nutrition trends, prediction accuracy metrics, and intervention effectiveness over time.
+**Validates: Requirements 11.3**
+
+**Property 66: Report generation meets performance requirements**
+*For any* report generation request for up to 10,000 child records, the backend service should generate and return the complete report within 30 seconds.
+**Validates: Requirements 11.4**
+
+**Property 67: Report export supports required formats**
 *For any* report export functionality in the system, the export should support both PDF and CSV output formats.
 **Validates: Requirements 11.5**
 
-**Property 61: Threshold alerts are generated**
+**Property 68: Threshold alerts are generated**
 *For any* Anganwadi center where the calculated malnutrition rate exceeds the configured threshold value, an automated alert should be generated and sent to the appropriate administrators.
 **Validates: Requirements 11.6**
 
-**Property 62: Comparisons include statistical significance**
+**Property 69: Comparisons include statistical significance**
 *For any* time period comparison displayed in reports (e.g., comparing malnutrition rates between two months), the system should calculate and display the statistical significance (p-value) of the observed changes in nutrition outcomes.
 **Validates: Requirements 11.7**
 
+### Performance Properties
+
+**Property 70: Record loading meets performance target**
+*For any* child record retrieval operation in the mobile app, the record should be displayed within 2 seconds of the request.
+**Validates: Requirements 12.1**
+
+**Property 71: CV processing meets performance target**
+*For any* inventory image processed by the CV module, the recognition results should be returned within 5 seconds.
+**Validates: Requirements 12.2**
+
+**Property 72: Voice processing meets performance target**
+*For any* voice command processed by the voice interface, the system should respond within 3 seconds.
+**Validates: Requirements 12.3**
+
+**Property 73: Backend supports concurrent users**
+*For any* load test with up to 10,000 concurrent healthcare workers, the backend service should maintain response times within acceptable limits (< 5 seconds for 95th percentile).
+**Validates: Requirements 12.4**
+
+**Property 74: Prediction throughput meets requirements**
+*For any* one-minute time window, the backend service should successfully process at least 1,000 prediction requests.
+**Validates: Requirements 12.5**
+
+**Property 75: Sync handles concurrent operations**
+*For any* load test with up to 100 concurrent sync operations, the sync engine should successfully process all operations without data loss or corruption.
+**Validates: Requirements 12.6**
+
+**Property 76: System maintains uptime target**
+*For any* 30-day period, the system should maintain at least 99.5% uptime during business hours (6 AM to 8 PM IST).
+**Validates: Requirements 12.7**
+
 ### User Experience Properties
 
-**Property 63: First-time users see tutorial**
+**Property 77: First-time users see tutorial**
 *For any* healthcare worker logging into the mobile app for the first time (as indicated by user preferences), the app should display an interactive tutorial covering core features before allowing normal app usage.
 **Validates: Requirements 13.1**
 
-**Property 64: Help tooltips are available**
+**Property 78: Help tooltips are available**
 *For any* major feature in the mobile app (as defined in the feature list), a contextual help tooltip should be available and accessible to the user through a help icon or gesture.
 **Validates: Requirements 13.2**
 
-**Property 65: Error messages include solutions**
+**Property 79: Video tutorials support multiple languages**
+*For any* video tutorial in the system, the tutorial should be available in at least the 10 major supported vernacular languages.
+**Validates: Requirements 13.3**
+
+**Property 80: Error messages include solutions**
 *For any* error message displayed to the user, the error message text should include a suggested solution or next step that the user can take to resolve or work around the error.
 **Validates: Requirements 13.4**
 
-**Property 66: Help section is searchable**
+**Property 81: Help section is searchable**
 *For any* help section in the mobile app, there should be a search functionality that allows users to query FAQs and troubleshooting guides by keyword.
 **Validates: Requirements 13.5**
 
-**Property 67: New features show introductions**
+**Property 82: Feature usage is tracked**
+*For any* major feature in the mobile app, the system should track usage statistics and provide personalized tips for features that the user has not utilized or underutilized.
+**Validates: Requirements 13.6**
+
+**Property 83: New features show introductions**
 *For any* feature marked as "new" that is accessed for the first time by a user (tracked by user preferences), the mobile app should display a brief introduction or tutorial overlay before allowing full interaction with the feature.
 **Validates: Requirements 13.7**
 
@@ -1437,17 +1527,17 @@ test('prediction fails gracefully with insufficient data', () => {
 test('ghost detection flags records with matching demographics', () => {
   fc.assert(
     fc.property(
-      fc.array(studentGenerator(), { minLength: 2, maxLength: 100 }),
-      (students) => {
-        // Create a duplicate by copying a random student
-        const duplicate = { ...students[0], id: generateId() }
-        const allStudents = [...students, duplicate]
+      fc.array(childGenerator(), { minLength: 2, maxLength: 100 }),
+      (children) => {
+        // Create a duplicate by copying a random child
+        const duplicate = { ...children[0], id: generateId() }
+        const allChildren = [...children, duplicate]
         
-        const result = detectGhosts(allStudents)
+        const result = detectGhosts(allChildren)
         
         // Property: Should detect the duplicate
         const foundDuplicate = result.duplicates.some(d => 
-          d.records.includes(students[0].id) && 
+          d.records.includes(children[0].id) && 
           d.records.includes(duplicate.id)
         )
         expect(foundDuplicate).toBe(true)
@@ -1461,18 +1551,18 @@ test('ghost detection flags records with matching demographics', () => {
 test('sync changes all pending records to synced', () => {
   fc.assert(
     fc.property(
-      fc.array(studentGenerator(), { minLength: 1, maxLength: 50 }),
-      async (students) => {
+      fc.array(childGenerator(), { minLength: 1, maxLength: 50 }),
+      async (children) => {
         // Mark all as pending
-        const pendingStudents = students.map(s => ({ 
+        const pendingChildren = children.map(s => ({ 
           ...s, 
           metadata: { ...s.metadata, syncStatus: 'pending' } 
         }))
         
-        await syncEngine.syncAll(pendingStudents)
+        await syncEngine.syncAll(pendingChildren)
         
         // Property: All should now be synced
-        const allSynced = pendingStudents.every(s => 
+        const allSynced = pendingChildren.every(s => 
           s.metadata.syncStatus === 'synced'
         )
         expect(allSynced).toBe(true)
@@ -1482,19 +1572,19 @@ test('sync changes all pending records to synced', () => {
   )
 })
 
-// Feature: anganwadi-ai-nutrition-system, Property 31: Recipe suggestions address deficiencies
-test('all suggested recipes address student deficiencies', () => {
+// Feature: anganwadi-ai-nutrition-system, Property 42: Recipe suggestions address deficiencies
+test('all suggested recipes address child deficiencies', () => {
   fc.assert(
     fc.property(
-      studentWithDeficienciesGenerator(),
+      childWithDeficienciesGenerator(),
       fc.array(recipeGenerator(), { minLength: 10, maxLength: 100 }),
-      (student, recipeDatabase) => {
-        const suggestions = suggestRecipes(student, recipeDatabase, 5)
+      (child, recipeDatabase) => {
+        const suggestions = suggestRecipes(child, recipeDatabase, 5)
         
         // Property: Every suggested recipe should address at least one deficiency
         const allAddressDeficiencies = suggestions.every(recipe =>
           recipe.addresses.deficiencies.some(d =>
-            student.nutritionData.deficiencies.map(sd => sd.type).includes(d)
+            child.nutritionData.deficiencies.map(sd => sd.type).includes(d)
           )
         )
         expect(allAddressDeficiencies).toBe(true)
@@ -1507,8 +1597,8 @@ test('all suggested recipes address student deficiencies', () => {
 
 **Generators for Property Tests:**
 ```typescript
-// Generator for random student records
-const studentGenerator = () => fc.record({
+// Generator for random child records
+const childGenerator = () => fc.record({
   id: fc.uuid(),
   centerId: fc.uuid(),
   personalInfo: fc.record({
@@ -1528,10 +1618,10 @@ const studentGenerator = () => fc.record({
   })
 })
 
-// Generator for students with deficiencies
-const studentWithDeficienciesGenerator = () => studentGenerator().chain(student =>
+// Generator for children with deficiencies
+const childWithDeficienciesGenerator = () => childGenerator().chain(child =>
   fc.record({
-    ...student,
+    ...child,
     nutritionData: fc.record({
       deficiencies: fc.array(
         fc.record({
