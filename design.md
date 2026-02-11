@@ -48,7 +48,7 @@ The Anganwadi AI Nutrition and Management System is an offline-first mobile appl
 │  ┌──────┴──────────────────┴──────────────────┴───────┐    │
 │  │              Microservices Layer                    │    │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐           │    │
-│  │  │ Child│   │       ML     │ │ Inventory│           │    │
+│  │  │ Student  │ │    ML │  │ | Inventory│           │    │
 │  │  │ Service  │ │ Service  │ │ Service  │           │    │
 │  │  └──────────┘ └──────────┘ └──────────┘           │    │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐           │    │
@@ -101,29 +101,30 @@ The Anganwadi AI Nutrition and Management System is an offline-first mobile appl
 
 ### Mobile Application Components
 
-#### 1. Student Manager
-**Responsibility:** Manage student records, health data, and nutrition tracking
+#### 1. Child Manager
+**Responsibility:** Manage child records, health data, and nutrition tracking
 
 **Key Methods:**
 ```typescript
-interface StudentManager {
+interface ChildManager {
   // CRUD operations
-  createStudent(data: StudentData): Promise<Student>
-  getStudent(id: string): Promise<Student>
-  updateStudent(id: string, data: Partial<StudentData>): Promise<Student>
-  deleteStudent(id: string): Promise<void>
+  createChild(data: ChildData): Promise<Child>
+  getChild(id: string): Promise<Child>
+  updateChild(id: string, data: Partial<ChildData>): Promise<Child>
+  deleteChild(id: string): Promise<void>
   
   // Search and filtering
-  searchStudents(query: string): Promise<Student[]>
-  getStudentsByCenter(centerId: string): Promise<Student[]>
+  searchChildren(query: string): Promise<Child[]>
+  getChildrenByCenter(centerId: string): Promise<Child[]>
   
   // Health tracking
-  addHealthMeasurement(studentId: string, measurement: HealthMeasurement): Promise<void>
-  getHealthHistory(studentId: string, days: number): Promise<HealthMeasurement[]>
+  addHealthMeasurement(childId: string, measurement: HealthMeasurement): Promise<void>
+  addHealthMeasurementFromPhoto(childId: string, photoData: Blob, sidePhotoData?: Blob): Promise<HealthMeasurement>
+  getHealthHistory(childId: string, days: number): Promise<HealthMeasurement[]>
   
   // Data quality
-  detectMissingValues(studentId: string): MissingValueReport
-  validateStudentData(data: StudentData): ValidationResult
+  detectMissingValues(childId: string): MissingValueReport
+  validateChildData(data: ChildData): ValidationResult
 }
 ```
 
@@ -134,8 +135,8 @@ interface StudentManager {
 ```typescript
 interface PredictionEngine {
   // Prediction generation
-  predictNutritionOutcome(studentId: string, horizonDays: number): Promise<NutritionPrediction>
-  batchPredict(studentIds: string[]): Promise<Map<string, NutritionPrediction>>
+  predictNutritionOutcome(childId: string, horizonDays: number): Promise<NutritionPrediction>
+  batchPredict(childIds: string[]): Promise<Map<string, NutritionPrediction>>
   
   // Model management
   loadModel(modelPath: string): Promise<void>
@@ -143,8 +144,8 @@ interface PredictionEngine {
   getModelVersion(): string
   
   // Risk assessment
-  assessMalnutritionRisk(studentId: string): RiskLevel
-  getRiskFactors(studentId: string): RiskFactor[]
+  assessMalnutritionRisk(childId: string): RiskLevel
+  getRiskFactors(childId: string): RiskFactor[]
 }
 ```
 
@@ -176,7 +177,7 @@ interface InventoryManager {
 ```typescript
 interface RecipeEngine {
   // Recipe suggestions
-  suggestRecipes(studentId: string, count: number): Promise<Recipe[]>
+  suggestRecipes(childId: string, count: number): Promise<Recipe[]>
   getRecipesByDeficiency(deficiency: NutritionalDeficiency): Promise<Recipe[]>
   
   // Recipe management
@@ -184,8 +185,8 @@ interface RecipeEngine {
   searchRecipes(query: string, filters: RecipeFilters): Promise<Recipe[]>
   
   // Meal tracking
-  recordMealPrepared(studentId: string, recipeId: string, date: Date): Promise<void>
-  getMealHistory(studentId: string, days: number): Promise<MealRecord[]>
+  recordMealPrepared(childId: string, recipeId: string, date: Date): Promise<void>
+  getMealHistory(childId: string, days: number): Promise<MealRecord[]>
 }
 ```
 
@@ -197,7 +198,7 @@ interface RecipeEngine {
 interface SyncEngine {
   // Sync operations
   syncAll(): Promise<SyncResult>
-  syncStudents(): Promise<SyncResult>
+  syncChildren(): Promise<SyncResult>
   syncInventory(): Promise<SyncResult>
   syncMessages(): Promise<SyncResult>
   
@@ -235,22 +236,85 @@ interface VoiceInterface {
 ```
 
 #### 7. Computer Vision Module
-**Responsibility:** Recognize inventory items from images
+**Responsibility:** Recognize inventory items from images and extract anthropometric measurements from photos
 
 **Key Methods:**
 ```typescript
 interface CVModule {
-  // Image recognition
+  // Image recognition for inventory
   recognizeItem(imageData: Blob): Promise<RecognitionResult>
   batchRecognize(images: Blob[]): Promise<RecognitionResult[]>
   
+  // Anthropometric measurement extraction
+  extractMeasurements(imageData: Blob): Promise<MeasurementResult>
+  extractMeasurementsMultiView(frontImage: Blob, sideImage: Blob): Promise<MeasurementResult>
+  detectPose(imageData: Blob): Promise<PoseDetectionResult>
+  estimateDepth(imageData: Blob): Promise<DepthMap>
+  calculateBodyVolume(frontImage: Blob, sideImage: Blob): Promise<VolumeEstimation>
+  
   // Model management
   loadCVModel(modelPath: string): Promise<void>
+  loadPoseModel(modelPath: string): Promise<void>
   updateCVModel(newModelData: ArrayBuffer): Promise<void>
+  updatePoseModel(newModelData: ArrayBuffer): Promise<void>
   
-  // Preprocessing
+  // Preprocessing and validation
   preprocessImage(imageData: Blob): Promise<Blob>
   validateImageQuality(imageData: Blob): ImageQualityReport
+  validatePoseForMeasurement(imageData: Blob): PoseValidationResult
+}
+
+interface MeasurementResult {
+  height: number                      // cm
+  weight: number                      // kg
+  muac: number                        // cm (Mid-Upper Arm Circumference)
+  headCircumference: number           // cm
+  confidenceScores: {
+    height: number                    // 0-1
+    weight: number                    // 0-1
+    muac: number                      // 0-1
+    headCircumference: number         // 0-1
+  }
+  bodyLandmarks: BodyLandmark[]
+  depthEstimation: boolean
+  qualityScore: number                // 0-1
+  warnings: string[]
+  autoSaved: boolean                  // true if confidence >= 0.8
+}
+
+interface PoseDetectionResult {
+  landmarks: BodyLandmark[]
+  confidence: number
+  poseQuality: 'excellent' | 'good' | 'fair' | 'poor'
+  issues: string[]                    // e.g., "partial occlusion", "poor lighting"
+}
+
+interface BodyLandmark {
+  name: string                        // e.g., "head_top", "feet_bottom", "shoulder_left", "shoulder_right", "elbow_left", "elbow_right"
+  x: number                           // pixel coordinates
+  y: number
+  z?: number                          // depth coordinate (if available)
+  confidence: number                  // 0-1
+}
+
+interface DepthMap {
+  width: number
+  height: number
+  depthValues: Float32Array           // depth value for each pixel
+  confidence: number
+}
+
+interface VolumeEstimation {
+  bodyVolume: number                  // cubic cm
+  bodySurfaceArea: number             // square cm
+  estimatedWeight: number             // kg
+  confidence: number
+}
+
+interface PoseValidationResult {
+  isValid: boolean
+  issues: string[]                    // e.g., "body not fully visible", "not standing straight"
+  suggestions: string[]               // e.g., "Move further back", "Stand against a wall"
 }
 ```
 
@@ -279,19 +343,19 @@ interface MessagingService {
 
 ### Backend Service Components
 
-#### 1. Student Service
-**Responsibility:** Manage student records and health data in the cloud
+#### 1. Child Service
+**Responsibility:** Manage child records and health data in the cloud
 
 **API Endpoints:**
 ```
-POST   /api/v1/students                    # Create student
-GET    /api/v1/students/{id}               # Get student by ID
-PUT    /api/v1/students/{id}               # Update student
-DELETE /api/v1/students/{id}               # Delete student
-GET    /api/v1/students/center/{centerId}  # Get students by center
-POST   /api/v1/students/search             # Search students
-GET    /api/v1/students/{id}/health        # Get health history
-POST   /api/v1/students/{id}/health        # Add health measurement
+POST   /api/v1/children                    # Create child
+GET    /api/v1/children/{id}               # Get child by ID
+PUT    /api/v1/children/{id}               # Update child
+DELETE /api/v1/children/{id}               # Delete child
+GET    /api/v1/children/center/{centerId}  # Get children by center
+POST   /api/v1/children/search             # Search children
+GET    /api/v1/children/{id}/health        # Get health history
+POST   /api/v1/children/{id}/health        # Add health measurement
 ```
 
 #### 2. ML Service
@@ -332,6 +396,105 @@ POST   /api/v1/ml/models/train             # Trigger model training
    - Input: Image (224x224 RGB)
    - Output: Item class + confidence score
    - Training: Continuous learning with user corrections
+
+5. **Pose Estimation Model for Anthropometric Measurements**
+   - Type: Convolutional Neural Network (MoveNet or MediaPipe Pose)
+   - Input: Image (256x256 RGB or higher resolution)
+   - Output: 17-33 body keypoints with confidence scores (head, shoulders, hips, knees, ankles, elbows, etc.)
+   - Post-processing: Calculate height, MUAC, head circumference, and weight from landmarks
+   - Accuracy Targets:
+     - Height: ±3cm without reference object
+     - Weight: ±1kg using body volume estimation
+     - MUAC: ±0.5cm
+     - Head Circumference: ±1cm
+   - Training: Pre-trained model fine-tuned on Indian child anthropometric data
+   - Deployment: TensorFlow Lite for on-device inference
+
+6. **Depth Estimation Model for Weight Calculation**
+   - Type: Monocular Depth Estimation CNN (MiDaS or similar)
+   - Input: Single RGB image (256x256 or higher)
+   - Output: Depth map for 3D body volume estimation
+   - Purpose: Enable weight estimation from 2D photos
+   - Deployment: TensorFlow Lite for on-device inference
+
+**Anthropometric Measurement Technical Approach:**
+
+The photo-based measurement system uses a multi-stage pipeline:
+
+1. **Image Preprocessing:**
+   - Resize to model input dimensions (256x256 or 512x512)
+   - Normalize pixel values
+   - Apply contrast enhancement if needed
+   - Validate image quality (blur detection, lighting check)
+
+2. **Pose Detection:**
+   - Run pose estimation model to detect body keypoints
+   - Extract key landmarks: head_top, neck, shoulders, hips, knees, ankles, feet_bottom, elbows
+   - Calculate confidence scores for each landmark
+   - Validate pose quality (full body visible, standing straight, minimal occlusion)
+
+3. **Height Calculation (No Reference Object Required):**
+   - Calculate pixel distance from head_top to feet_bottom landmarks
+   - Use depth estimation model to estimate camera-to-subject distance
+   - Apply anthropometric ratios (head-to-body proportions) for calibration
+   - Use average child proportions database for age-based calibration
+   - Calculate height with confidence score based on landmark confidence and depth estimation quality
+   - Target accuracy: ±3cm
+
+4. **MUAC Calculation:**
+   - Identify shoulder and elbow landmarks on both arms
+   - Calculate midpoint between shoulder and elbow
+   - Estimate arm circumference using:
+     - Arm width at midpoint from front view
+     - Depth estimation for 3D arm volume
+     - Circular approximation formula: MUAC = π × diameter
+   - Average measurements from both arms if both visible
+   - Target accuracy: ±0.5cm
+
+5. **Head Circumference Calculation:**
+   - Use facial landmark detection (eyes, nose, ears, chin)
+   - Estimate head width and depth from front view
+   - Apply 3D head-mapping algorithm to estimate widest skull circumference
+   - Use ellipsoid approximation: circumference = π × (3(a+b) - √((3a+b)(a+3b)))
+   - Primarily for children under 2 years
+   - Target accuracy: ±1cm
+
+6. **Weight Estimation (Body Volume Method):**
+   - **Option A: Single Photo with Depth Estimation**
+     - Run monocular depth estimation model
+     - Generate 3D body mesh from pose landmarks + depth map
+     - Calculate body volume from 3D mesh
+   - **Option B: Dual Photo (Front + Side)**
+     - Capture front and side profile photos
+     - Extract body silhouettes from both views
+     - Calculate cross-sectional areas at multiple body segments
+     - Integrate volumes using truncated cone approximation
+   - Calculate Body Surface Area (BSA) using Mosteller formula: BSA = √(height × weight) / 60
+   - Estimate weight from volume using average child body density (1.05 g/cm³)
+   - Apply age and gender-specific correction factors
+   - Target accuracy: ±1kg
+
+7. **Confidence Scoring:**
+   - Calculate individual confidence scores for each measurement
+   - Factors: landmark confidence, pose quality, lighting, occlusion, depth estimation quality
+   - Overall confidence = weighted average of individual confidences
+   - Threshold: 80% for automatic saving
+
+8. **Automatic Saving (No Confirmation):**
+   - If all measurement confidences >= 80%: Automatically create HealthMeasurement record
+   - If any measurement confidence < 80%: Prompt for retake or manual entry
+   - Store confidence scores in photoMetadata for audit trail
+
+9. **Validation and Feedback:**
+   - Check if confidence scores meet threshold (80%)
+   - If below threshold: provide specific feedback (e.g., "Move 1 meter back", "Capture side profile for weight", "Improve lighting")
+   - If above threshold: auto-save and display success message with extracted values
+
+10. **Continuous Improvement:**
+    - Store photos with ground truth measurements (when available)
+    - Use for model fine-tuning and accuracy improvement
+    - Track measurement accuracy over time by comparing with manual measurements
+    - Implement active learning to improve model on edge cases
 
 #### 3. Inventory Service
 **Responsibility:** Manage inventory data and consumption tracking
@@ -426,10 +589,10 @@ GET    /api/v1/auth/permissions            # Get user permissions
 
 ## Data Models
 
-### Student Record
+### Child Record
 
 ```typescript
-interface Student {
+interface Child {
   id: string                          // UUID
   centerId: string                    // Anganwadi center ID
   personalInfo: {
@@ -478,13 +641,28 @@ interface Student {
 
 interface HealthMeasurement {
   id: string
-  studentId: string
+  childId: string
   measurementDate: Date
   weight: number                      // kg
   height: number                      // cm
   bmi: number
   muac?: number                       // Mid-upper arm circumference (cm)
-  headCircumference?: number          // cm (for infants)
+  headCircumference?: number          // cm
+  measurementMethod: 'manual' | 'photo'
+  photoMetadata?: {
+    frontPhotoUrl: string
+    sidePhotoUrl?: string
+    confidenceScores: {
+      height: number
+      weight: number
+      muac: number
+      headCircumference: number
+    }
+    depthEstimationUsed: boolean
+    poseQuality: 'excellent' | 'good' | 'fair' | 'poor'
+    extractedLandmarks: number        // count of detected body landmarks
+    autoSaved: boolean                // true if saved automatically (confidence >= 80%)
+  }
   notes?: string
   measuredBy: string                  // Healthcare worker ID
   createdAt: Date
@@ -499,7 +677,7 @@ interface NutritionalDeficiency {
 
 interface MealRecord {
   id: string
-  studentId: string
+  childId: string
   recipeId: string
   recipeName: string
   date: Date
@@ -614,7 +792,7 @@ interface Ingredient {
 ```typescript
 interface NutritionPrediction {
   id: string
-  studentId: string
+  childId: string
   predictionDate: Date
   predictions: {
     horizon30Days: PredictionPoint
@@ -684,7 +862,7 @@ interface Message {
 
 interface Referral {
   id: string
-  studentId: string
+  childId: string
   fromWorkerId: string
   toWorkerId: string
   referralType: 'medical_checkup' | 'nutrition_counseling' | 'vaccination' | 'emergency' | 'other'
@@ -764,11 +942,11 @@ interface Permission {
 ### Ghost Entry Detection Properties
 
 **Property 1: Duplicate detection identifies similar records**
-*For any* set of student records with matching demographic data (name, DOB, parent info) within the same Anganwadi center, the ghost detection algorithm should flag these records as potential duplicates with a similarity score above the configured threshold.
+*For any* set of child records with matching demographic data (name, DOB, parent info) within the same Anganwadi center, the ghost detection algorithm should flag these records as potential duplicates with a similarity score above the configured threshold.
 **Validates: Requirements 1.1, 1.2**
 
 **Property 2: Biometric matching increases confidence**
-*For any* pair of student records where one has only demographic matches and another has both demographic and biometric matches, the biometric-matched pair should have a higher duplicate confidence score.
+*For any* pair of child records where one has only demographic matches and another has both demographic and biometric matches, the biometric-matched pair should have a higher duplicate confidence score.
 **Validates: Requirements 1.3**
 
 **Property 3: Ghost detection generates complete reports**
@@ -779,189 +957,288 @@ interface Permission {
 *For any* ghost entry detection or resolution action (merge/delete), there should exist a corresponding audit log entry containing timestamp, user ID, action type, and affected record IDs.
 **Validates: Requirements 1.6**
 
+**Property 5: Ghost resolution UI provides required actions**
+*For any* flagged ghost entry displayed in the administrator review interface, the UI should provide both merge and delete action buttons or controls.
+**Validates: Requirements 1.5**
+
 ### Missing Value Detection Properties
 
-**Property 5: Missing value detection is complete**
-*For any* student record, the missing value detection function should identify and return all fields that are null, undefined, or empty strings.
+**Property 6: Missing value detection is complete**
+*For any* child record, the missing value detection function should identify and return all fields that are null, undefined, or empty strings.
 **Validates: Requirements 2.1**
 
-**Property 6: Critical missing values prevent predictions**
-*For any* student record with one or more missing critical health metrics (weight, height, or age), attempting to generate a nutrition prediction should either fail with an error or mark the record as incomplete and return no prediction.
+**Property 7: Critical missing values prevent predictions**
+*For any* child record with one or more missing critical health metrics (weight, height, or age), attempting to generate a nutrition prediction should either fail with an error or mark the record as incomplete and return no prediction.
 **Validates: Requirements 2.2**
 
-**Property 7: Non-critical missing values allow predictions with warnings**
-*For any* student record with complete critical fields but missing non-critical fields, the prediction generation should succeed and the result should include a data quality warning flag.
+**Property 8: Non-critical missing values allow predictions with warnings**
+*For any* child record with complete critical fields but missing non-critical fields, the prediction generation should succeed and the result should include a data quality warning flag.
 **Validates: Requirements 2.3**
 
-**Property 8: Missing fields are highlighted in UI**
-*For any* student record with one or more missing values, the UI rendering function should produce output that includes visual indicators (highlighting, icons, or markers) for each missing field.
+**Property 9: Missing fields are highlighted in UI**
+*For any* child record with one or more missing values, the UI rendering function should produce output that includes visual indicators (highlighting, icons, or markers) for each missing field.
 **Validates: Requirements 2.4**
 
-**Property 9: Sync prioritizes complete records**
+**Property 10: Missing data reports contain required statistics**
+*For any* missing data report generated by the system, the report should include statistics grouped by field name and by Anganwadi center ID.
+**Validates: Requirements 2.5**
+
+**Property 11: Sync prioritizes complete records**
 *For any* set of pending records to sync, when ordered by the sync priority algorithm, records with complete critical data should appear before records with missing critical data in the transmission queue.
 **Validates: Requirements 2.6**
 
 ### Nutrition Prediction Properties
 
-**Property 10: Predictions cover all time horizons**
-*For any* student record with sufficient historical data (at least 3 measurements over 30 days), the prediction service should generate nutrition outcome predictions for all three time horizons: 30, 60, and 90 days.
+**Property 12: Predictions cover all time horizons**
+*For any* child record with sufficient historical data (at least 3 measurements over 30 days), the prediction service should generate nutrition outcome predictions for all three time horizons: 30, 60, and 90 days.
 **Validates: Requirements 3.1**
 
-**Property 11: Risk classification is valid**
+**Property 13: Risk classification is valid**
 *For any* nutrition prediction generated by the system, the risk level field should contain exactly one of the valid enumerated values: 'low', 'medium', or 'high'.
 **Validates: Requirements 3.3**
 
-**Property 12: High-risk predictions trigger alerts**
+**Property 14: High-risk predictions trigger alerts**
 *For any* nutrition prediction with risk level 'high', the mobile app should generate and display an alert object containing the prediction details and recommended interventions.
 **Validates: Requirements 3.4**
 
+**Property 15: Sync updates predictions with server model**
+*For any* child record with predictions generated using the on-device model while offline, after a successful sync operation, the predictions should be regenerated using the full server-side model and the prediction metadata should indicate 'server' as the generation source.
+**Validates: Requirements 3.7**
+
 ### Offline Operation Properties
 
-**Property 13: Offline changes are marked pending**
+**Property 16: Offline app loads local records**
+*For any* mobile app instance starting without internet connectivity, the app should successfully load and display all locally stored child records from the SQLite database.
+**Validates: Requirements 4.1**
+
+**Property 17: Offline changes are marked pending**
 *For any* create or update operation performed when the mobile app is in offline mode (no network connectivity), the resulting record should have its syncStatus field set to 'pending'.
 **Validates: Requirements 4.2**
 
-**Property 14: Sync transmits all pending changes**
+**Property 18: Sync transmits all pending changes**
 *For any* set of records with syncStatus 'pending' before a sync operation, after the sync completes successfully, all those records should have syncStatus changed to 'synced' (assuming no conflicts).
 **Validates: Requirements 4.4**
 
-**Property 15: Conflict resolution applies last-write-wins**
+**Property 19: Conflict resolution applies last-write-wins**
 *For any* sync conflict where the same record was modified both offline and online, the conflict resolution algorithm should retain the version with the later updatedAt timestamp and generate a conflict notification for the user.
 **Validates: Requirements 4.5**
 
-**Property 16: Storage eviction retains recent records**
-*For any* storage eviction operation triggered when local capacity is exceeded, the set of records retained in storage should be those with the most recent lastAccessedAt timestamps, up to the storage limit.
+**Property 20: Storage eviction retains recent records**
+*For any* storage eviction operation triggered when local capacity is exceeded, the set of records retained should include all records accessed within the last 30 days, and evicted records should be those with the oldest lastAccessedAt timestamps.
+**Validates: Requirements 4.7**tained in storage should be those with the most recent lastAccessedAt timestamps, up to the storage limit.
 **Validates: Requirements 4.7**
 
 ### Voice Interface Properties
 
-**Property 17: Voice feedback uses selected language**
+**Property 21: Voice interface supports required languages**
+*For any* language in the set {Hindi, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia}, the voice interface's getSupportedLanguages() method should return a list that includes that language.
+**Validates: Requirements 5.1**
+
+**Property 22: Voice input is available for required fields**
+*For any* form field designated for student names, symptoms, or notes, the mobile app UI should provide a voice input button or control that activates voice recognition when pressed.
+**Validates: Requirements 5.4**
+
+**Property 23: Voice feedback uses selected language**
 *For any* alert or feedback message when voice synthesis is enabled, the generated speech audio should be in the language specified by the healthcare worker's current language preference setting.
 **Validates: Requirements 5.5**
 
-**Property 18: Low-confidence recognition prompts correction**
+**Property 24: Language switching is available**
+*For any* user accessing the mobile app settings, there should be a language selection control that allows switching between all supported vernacular languages.
+**Validates: Requirements 5.6**
+
+**Property 25: Low-confidence recognition prompts correction**
 *For any* voice recognition result with confidence score below 70%, the mobile app should display the recognized text in an editable field allowing manual correction before submission.
 **Validates: Requirements 5.7**
 
 ### Computer Vision Inventory Properties
 
-**Property 19: Recognized items prompt confirmation**
+**Property 26: CV module recognizes required items**
+*For any* food item in the set {rice, wheat, lentils, vegetables, fruits, milk powder, cooking oil}, the CV module's item recognition model should be capable of identifying that item (i.e., the item should be in the model's supported classes list).
+**Validates: Requirements 6.2**
+
+**Property 27: Recognized items prompt confirmation**
 *For any* inventory item successfully recognized from an image (confidence >= 70%), the mobile app should display a confirmation prompt showing the recognized item name and request quantity input before updating the inventory database.
 **Validates: Requirements 6.3**
 
-**Property 20: Low-confidence recognition allows manual selection**
+**Property 28: Low-confidence recognition allows manual selection**
 *For any* CV recognition result with confidence score below 70%, the mobile app should provide a manual item selection interface (dropdown, search, or list) allowing the user to choose the correct item.
 **Validates: Requirements 6.4**
 
-**Property 21: Inventory tracking is comprehensive**
+**Property 29: Inventory tracking is comprehensive**
 *For any* inventory item record in the database, the record should contain non-null values for current quantity, consumption rate (calculated or default), and expiration date (if applicable to the item category).
 **Validates: Requirements 6.6**
 
-**Property 22: Low stock triggers alerts**
+**Property 30: Low stock triggers alerts**
 *For any* inventory item where the current quantity value falls below the configured minimum threshold value for that item, the system should generate a low-stock alert notification.
 **Validates: Requirements 6.7**
 
-### Recipe Suggestion Properties
+### Photo-Based Anthropometric Measurement Properties
 
-**Property 23: Recipe suggestions address deficiencies**
-*For any* student with one or more identified nutritional deficiencies, every recipe in the suggested recipes list should address at least one of those specific deficiencies (i.e., the recipe's addresses.deficiencies array should contain at least one deficiency type that matches the student's deficiencies).
+**Property 31: Multiple measurements extracted from photos**
+*For any* valid photo of a child in standardized pose with sufficient image quality, the CV module should extract all four measurements (height, weight, MUAC, head circumference) with each measurement having an error margin within acceptable thresholds (height ±3cm, weight ±1kg, MUAC ±0.5cm, head circumference ±1cm) compared to ground truth.
 **Validates: Requirements 7.1**
 
-**Property 24: Recipe suggestions respect allergy constraints**
-*For any* student with documented allergies, all suggested recipes should not contain any ingredients that match those allergens (i.e., no recipe ingredient should appear in the student's allergy list).
-**Validates: Requirements 7.2**
-
-**Property 25: Recipe suggestions use available ingredients**
-*For any* suggested recipe, all required (non-optional) ingredients should be present in the current local inventory with quantity greater than or equal to the recipe's required quantity.
+**Property 32: Height extraction without reference object**
+*For any* photo of a child, the height extraction should complete successfully without requiring a reference object in the image, using depth estimation and body proportions for calibration.
 **Validates: Requirements 7.3**
 
-**Property 26: Recipe display is complete**
-*For any* recipe displayed in the mobile app UI, the rendered output should include all of the following fields: ingredients list, preparation steps, portion sizes, and nutritional benefits.
+**Property 33: MUAC extraction accuracy**
+*For any* photo where shoulder and elbow landmarks are clearly visible, the extracted MUAC measurement should be within ±0.5cm of ground truth measurement.
+**Validates: Requirements 7.4**
+
+**Property 34: Head circumference extraction accuracy**
+*For any* photo of a child under 2 years with clear facial visibility, the extracted head circumference should be within ±1cm of ground truth measurement.
 **Validates: Requirements 7.5**
 
-**Property 27: Meal preparation is logged**
-*For any* meal preparation action (marking a recipe as prepared for a student), the system should create a new meal record entry in the database and update the student's nutrition tracking data with the meal information.
+**Property 35: Weight estimation accuracy**
+*For any* photo (or pair of front/side photos) with full body visibility, the estimated weight should be within ±1kg of ground truth weight.
 **Validates: Requirements 7.6**
 
-**Property 28: Multi-deficiency recipes rank higher**
-*For any* two recipes in a suggestion list where one recipe addresses N deficiencies and another addresses M deficiencies (where N > M), the recipe addressing more deficiencies should have a higher ranking score and appear earlier in the sorted suggestion list.
+**Property 36: Measurements include individual confidence scores**
+*For any* measurement extraction result (successful or failed), the result object should contain individual confidence score fields for height, weight, MUAC, and head circumference, each with a value between 0 and 1.
 **Validates: Requirements 7.7**
+
+**Property 37: Low confidence triggers retry prompt**
+*For any* measurement extraction where any individual measurement confidence score is below 0.8, the mobile app should display a prompt offering options to retake the photo or enter measurements manually.
+**Validates: Requirements 7.8**
+
+**Property 38: High confidence auto-saves measurements**
+*For any* measurement extraction where all individual confidence scores are >= 0.8, the system should automatically create a new HealthMeasurement record with measurementMethod='photo' and update the associated Child_Record's health data without requiring user confirmation.
+**Validates: Requirements 7.9**
+
+**Property 39: Measurement extraction works offline**
+*For any* photo capture and measurement extraction performed when the mobile app is in offline mode, the extraction should complete successfully using the on-device pose estimation and depth estimation models.
+**Validates: Requirements 7.10**
+
+**Property 40: Failed extraction provides specific feedback**
+*For any* measurement extraction failure, the error response should include at least one specific, actionable feedback message (e.g., "Move further back", "Ensure full body is visible", "Capture side profile for weight estimation") rather than a generic error message.
+**Validates: Requirements 7.12**
+
+### Recipe Suggestion Properties
+
+**Property 39: Recipe suggestions address deficiencies**
+*For any* child with one or more identified nutritional deficiencies, every recipe in the suggested recipes list should address at least one of those specific deficiencies (i.e., the recipe's addresses.deficiencies array should contain at least one deficiency type that matches the child's deficiencies).
+**Validates: Requirements 8.1**
+
+**Property 40: Recipe suggestions respect allergy constraints**
+*For any* child with documented allergies, all suggested recipes should not contain any ingredients that match those allergens (i.e., no recipe ingredient should appear in the child's allergy list).
+**Validates: Requirements 8.2**
+
+**Property 41: Recipe suggestions use available ingredients**
+*For any* suggested recipe, all required (non-optional) ingredients should be present in the current local inventory with quantity greater than or equal to the recipe's required quantity.
+**Validates: Requirements 8.3**
+
+**Property 42: Recipe display is complete**
+*For any* recipe displayed in the mobile app UI, the rendered output should include all of the following fields: ingredients list, preparation steps, portion sizes, and nutritional benefits.
+**Validates: Requirements 8.5**
+
+**Property 43: Meal preparation is logged**
+*For any* meal preparation action (marking a recipe as prepared for a child), the system should create a new meal record entry in the database and update the child's nutrition tracking data with the meal information.
+**Validates: Requirements 8.6**
+
+**Property 44: Multi-deficiency recipes rank higher**
+*For any* two recipes in a suggestion list where one recipe addresses N deficiencies and another addresses M deficiencies (where N > M), the recipe addressing more deficiencies should have a higher ranking score and appear earlier in the sorted suggestion list.
+**Validates: Requirements 8.7**
 
 ### Interconnection System Properties
 
-**Property 29: Referrals include health summary**
-*For any* referral created by the system, the referral object should include a health summary containing the student's current weight, current height, recent measurements (last 3-5 measurements), and all active nutritional deficiencies.
-**Validates: Requirements 8.1**
+**Property 45: Referrals include health summary**
+*For any* referral created by the system, the referral object should include a health summary containing the child's current weight, current height, recent measurements (last 3-5 measurements), and all active nutritional deficiencies.
+**Validates: Requirements 9.1**
 
-**Property 30: Referrals trigger notifications**
+**Property 46: Referrals trigger notifications**
 *For any* referral created in the system, a notification should be generated and queued for delivery to the recipient healthcare worker specified in the referral.
-**Validates: Requirements 8.2**
+**Validates: Requirements 9.2**
 
-**Property 31: Offline messages are queued**
+**Property 47: Offline messages are queued**
 *For any* message sent when the mobile app is in offline mode, the message should be stored locally with syncStatus 'pending' and transmitted to the server when connectivity is restored.
-**Validates: Requirements 8.3**
+**Validates: Requirements 9.3**
 
-**Property 32: Messages are encrypted**
+**Property 48: Messaging supports all content types**
+*For any* message created in the system, the message content type should be one of the supported types: 'text', 'voice', 'image', or 'referral'.
+**Validates: Requirements 9.4**
+
+**Property 49: Messages are encrypted**
 *For any* message stored in the database or transmitted over the network, the message content should be encrypted using the system's encryption algorithm (AES-256).
-**Validates: Requirements 8.5**
+**Validates: Requirements 9.5**
 
-**Property 33: Message history respects authorization**
-*For any* request to access a student's message history, the system should verify that the requesting healthcare worker has authorization for that student before returning the messages.
-**Validates: Requirements 8.6**
+**Property 50: Message history respects authorization**
+*For any* request to access a child's message history, the system should verify that the requesting healthcare worker has authorization for that child before returning the messages.
+**Validates: Requirements 9.6**
 
-**Property 34: Critical alerts notify care network**
-*For any* critical health alert detected for a student, notifications should be generated and sent to all healthcare workers who are members of that student's care network.
-**Validates: Requirements 8.7**
+**Property 51: Critical alerts notify care network**
+*For any* critical health alert detected for a child, notifications should be generated and sent to all healthcare workers who are members of that child's care network.
+**Validates: Requirements 9.7**
 
-**Property 35: Inbox organizes by student**
-*For any* inbox view rendered in the mobile app, all messages, referrals, and alerts should be grouped by their associated student ID, with each group clearly separated.
-**Validates: Requirements 8.8**
+**Property 52: Inbox organizes by child**
+*For any* inbox view rendered in the mobile app, all messages, referrals, and alerts should be grouped by their associated child ID, with each group clearly separated.
+**Validates: Requirements 9.8**
 
 ### Security and Privacy Properties
 
-**Property 36: Student records are encrypted**
-*For any* student record stored in the local database or transmitted over the network, the sensitive data fields should be encrypted using AES-256 encryption before storage or transmission.
-**Validates: Requirements 9.1**
+**Property 53: Child records are encrypted**
+*For any* child record stored in the local database or transmitted over the network, the sensitive data fields should be encrypted using AES-256 encryption before storage or transmission.
+**Validates: Requirements 10.1**
 
-**Property 37: Role-based permissions are enforced**
+**Property 54: MFA is required for login**
+*For any* login attempt to the mobile app, the authentication flow should require both password verification and OTP verification before granting access.
+**Validates: Requirements 10.2**
+
+**Property 55: Role-based permissions are enforced**
 *For any* user action attempting to access or modify a resource, the system should verify that the user's role includes the required permission for that action and resource before allowing the operation to proceed.
-**Validates: Requirements 9.3**
+**Validates: Requirements 10.3**
 
-**Property 38: Record access is audited**
-*For any* student record access operation (read, update, delete), an audit log entry should be created and persisted containing the timestamp, user ID, action type, and record ID.
-**Validates: Requirements 9.4**
+**Property 56: Record access is audited**
+*For any* child record access operation (read, update, delete), an audit log entry should be created and persisted containing the timestamp, user ID, action type, and record ID.
+**Validates: Requirements 10.4**
 
-**Property 39: Local data is encrypted**
+**Property 57: Local data is encrypted**
 *For any* data stored in the mobile app's local SQLite database, the data should be encrypted using device-level encryption (SQLCipher) with a secure encryption key.
-**Validates: Requirements 9.6**
+**Validates: Requirements 10.6**
 
 ### Reporting and Analytics Properties
 
-**Property 40: Reports include data quality metrics**
+**Property 58: Monthly reports contain required metrics**
+*For any* monthly report generated by the system, the report should include sections showing malnutrition rates, recovery rates, and trends, all grouped by Anganwadi center.
+**Validates: Requirements 11.1**
+
+**Property 59: Reports include data quality metrics**
 *For any* report generated by the system, the report output should include data quality metrics sections showing: number of ghost entries detected, count of missing values by field, and data completeness percentages by center.
-**Validates: Requirements 10.2**
+**Validates: Requirements 11.2**
 
-**Property 41: Threshold alerts are generated**
+**Property 60: Report export supports required formats**
+*For any* report export functionality in the system, the export should support both PDF and CSV output formats.
+**Validates: Requirements 11.5**
+
+**Property 61: Threshold alerts are generated**
 *For any* Anganwadi center where the calculated malnutrition rate exceeds the configured threshold value, an automated alert should be generated and sent to the appropriate administrators.
-**Validates: Requirements 10.6**
+**Validates: Requirements 11.6**
 
-**Property 42: Comparisons include statistical significance**
+**Property 62: Comparisons include statistical significance**
 *For any* time period comparison displayed in reports (e.g., comparing malnutrition rates between two months), the system should calculate and display the statistical significance (p-value) of the observed changes in nutrition outcomes.
-**Validates: Requirements 10.7**
+**Validates: Requirements 11.7**
 
 ### User Experience Properties
 
-**Property 43: Help tooltips are available**
+**Property 63: First-time users see tutorial**
+*For any* healthcare worker logging into the mobile app for the first time (as indicated by user preferences), the app should display an interactive tutorial covering core features before allowing normal app usage.
+**Validates: Requirements 13.1**
+
+**Property 64: Help tooltips are available**
 *For any* major feature in the mobile app (as defined in the feature list), a contextual help tooltip should be available and accessible to the user through a help icon or gesture.
-**Validates: Requirements 12.2**
+**Validates: Requirements 13.2**
 
-**Property 44: Error messages include solutions**
+**Property 65: Error messages include solutions**
 *For any* error message displayed to the user, the error message text should include a suggested solution or next step that the user can take to resolve or work around the error.
-**Validates: Requirements 12.4**
+**Validates: Requirements 13.4**
 
-**Property 45: New features show introductions**
+**Property 66: Help section is searchable**
+*For any* help section in the mobile app, there should be a search functionality that allows users to query FAQs and troubleshooting guides by keyword.
+**Validates: Requirements 13.5**
+
+**Property 67: New features show introductions**
 *For any* feature marked as "new" that is accessed for the first time by a user (tracked by user preferences), the mobile app should display a brief introduction or tutorial overlay before allowing full interaction with the feature.
-**Validates: Requirements 12.7**
+**Validates: Requirements 13.7**
 
 
 ## Error Handling
@@ -1180,7 +1457,7 @@ test('ghost detection flags records with matching demographics', () => {
   )
 })
 
-// Feature: anganwadi-ai-nutrition-system, Property 14: Sync transmits all pending changes
+// Feature: anganwadi-ai-nutrition-system, Property 18: Sync transmits all pending changes
 test('sync changes all pending records to synced', () => {
   fc.assert(
     fc.property(
@@ -1205,7 +1482,7 @@ test('sync changes all pending records to synced', () => {
   )
 })
 
-// Feature: anganwadi-ai-nutrition-system, Property 23: Recipe suggestions address deficiencies
+// Feature: anganwadi-ai-nutrition-system, Property 31: Recipe suggestions address deficiencies
 test('all suggested recipes address student deficiencies', () => {
   fc.assert(
     fc.property(
